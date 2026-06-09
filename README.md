@@ -32,7 +32,7 @@ One container holds all state — a module-level singleton (`bus.js`) backed by 
 ```json
 "agentbus": {
   "type": "http",
-  "url": "http://192.168.7.50:3107/mcp",
+  "url": "http://192.168.7.50:3108/mcp",
   "headers": { "Authorization": "Bearer <AGENTBUS_MCP_TOKEN>" }
 }
 ```
@@ -41,7 +41,7 @@ One container holds all state — a module-level singleton (`bus.js`) backed by 
 
 ## Deploy
 
-Prebuilt image `ghcr.io/jemplayer82/mcp-agentbus:latest` (built by `.github/workflows/build-push.yml`). Merge the `agentbus-mcp` service in `docker-compose.yaml` into the `mcp-shared` stack (port 3107, named volume), set `AGENTBUS_MCP_TOKEN`, and deploy via Portainer REST — resupply the full Env array so existing stack secrets aren't wiped. Health: `curl -sf http://192.168.7.50:3107/healthz`.
+Prebuilt image `ghcr.io/jemplayer82/mcp-agentbus:latest` (built by `.github/workflows/build-push.yml`). Merge the `agentbus-mcp` service in `docker-compose.yaml` into the `mcp-shared` stack (port 3107, named volume), set `AGENTBUS_MCP_TOKEN`, and deploy via Portainer REST — resupply the full Env array so existing stack secrets aren't wiped. Health: `curl -sf http://192.168.7.50:3108/healthz`.
 
 ## Test
 
