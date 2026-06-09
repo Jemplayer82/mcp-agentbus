@@ -1,0 +1,15 @@
+{
+  "name": "mcp-agentbus",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "description": "Real-time inter-agent message bus exposed as a streamable-HTTP MCP server.",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.15.0",
+    "better-sqlite3": "^11.8.0",
+    "zod": "^3.25.28"
+  }
+}
