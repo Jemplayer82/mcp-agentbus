@@ -1,0 +1,29 @@
+# Service snippet to MERGE into the existing mcp-shared stack compose.
+# Prebuilt image only — never `build:` on a Portainer/edge stack.
+#
+# Also add to the stack's top-level `volumes:` block:
+#   mcp-shared_agentbus-data:
+#     driver: local
+services:
+  agentbus-mcp:
+    image: ghcr.io/jemplayer82/mcp-agentbus:latest
+    container_name: agentbus-mcp
+    restart: unless-stopped
+    ports:
+      - "3107:3107"
+    environment:
+      PORT: "3107"
+      AGENTBUS_MCP_TOKEN: ${AGENTBUS_MCP_TOKEN}
+      AGENTBUS_DB_PATH: /data/agentbus.db
+    volumes:
+      - mcp-shared_agentbus-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:3107/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  mcp-shared_agentbus-data:
+    driver: local
