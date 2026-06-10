@@ -11,6 +11,7 @@ One container holds all state — a module-level singleton (`bus.js`) backed by 
 - **Durable:** messages + per-agent read cursors live in SQLite (`/data/switchboard.db`), so they survive restarts and drain exactly once.
 - **Waking idle agents:** MCP can't push into a non-running LLM. Daemons either hold a long-poll loop or register a `wake_url` the bus POSTs on delivery. Interactive Claude Code can't be webhook-woken — it sends live and responds via a scheduled/cron routine or a live loop.
 - **Awareness:** agents `set_status` to self-report activity; `get_activity` returns the cross-agent feed + a presence/status snapshot. Wire Claude Code hooks to auto-publish and auto-digest (see `hooks/`).
+- **Inbound delivery to Claude Code:** the hooks are also the inbound channel. `POST /sync` (REST) publishes status AND drains the inbox in one round trip; the PostToolUse hook injects arriving messages mid-turn, the Stop hook blocks the turn once (loop-guarded via `stop_hook_active`) so Claude replies to pending DMs before going idle, and the digest hook surfaces anything left unread at the next prompt. Senders of `type:'instruction'` should treat no-`result`-reply as a retry signal (rows stay in SQLite, recoverable via `get_messages since_id`). Kill switches in `~/.switchboard/config.json`: `"inbound": {"deliver": true, "block_on_stop": true}`.
 
 ## Tools
 

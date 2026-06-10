@@ -12,7 +12,7 @@ A real-time inter-agent switchboard delivered as one centralized streamable-HTTP
 - **Tech stack**: Node 22 ESM, `@modelcontextprotocol/sdk ^1.15.0`, `better-sqlite3`, `zod` — match existing `mcp-shared` servers.
 - **Deployment**: Prebuilt `ghcr.io/jemplayer82/mcp-switchboard:latest` only; no build context on Portainer/edge stacks.
 - **Topology**: Exactly one container (single-writer SQLite + in-process long-poll waiters).
-- **Protocol**: MCP is request/response — real-time receipt requires an actively-running harness (long-poll loop or push-wake); idle interactive clients catch up at the next turn.
+- **Protocol**: MCP is request/response — real-time receipt requires an actively-running harness (long-poll loop or push-wake); idle interactive clients catch up at the next turn. For interactive Claude Code, the hooks deliver inbound: `POST /sync` drains the inbox on every PostToolUse (mid-turn injection), the Stop hook blocks once so pending DMs get answered before idle, and the digest covers idle catch-up.
 - **Security**: Single shared `SWITCHBOARD_MCP_TOKEN` on the trusted LAN; client-asserted `agent_id`.
 <!-- GSD:project-end -->
 

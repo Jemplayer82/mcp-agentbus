@@ -131,15 +131,18 @@ class Bus {
   }
 
   // Returns unread messages for agentId across its DM inbox + joined channels.
-  // Advances cursors (drain) unless peek=true.
-  drain(agentId, { limit = 100, peek = false } = {}) {
+  // Advances cursors (drain) unless peek=true. dm_only skips channel scopes entirely
+  // (their cursors are untouched) — used by hooks that only act on direct messages.
+  drain(agentId, { limit = 100, peek = false, dm_only = false } = {}) {
     const scopes = [{ scope: DM, sql: `SELECT * FROM messages WHERE to_agent=? AND id>?`, args: (c) => [agentId, c] }];
-    for (const ch of this.joinedChannels(agentId)) {
-      scopes.push({
-        scope: ch,
-        sql: `SELECT * FROM messages WHERE channel_id=? AND from_agent!=? AND id>?`,
-        args: (c) => [ch, agentId, c],
-      });
+    if (!dm_only) {
+      for (const ch of this.joinedChannels(agentId)) {
+        scopes.push({
+          scope: ch,
+          sql: `SELECT * FROM messages WHERE channel_id=? AND from_agent!=? AND id>?`,
+          args: (c) => [ch, agentId, c],
+        });
+      }
     }
     let rows = [];
     const maxByScope = {};
@@ -243,7 +246,19 @@ class Bus {
   // ---- awareness layer ----
   setStatus({ agent_id, activity, detail }) {
     const now = this.now();
-    this.db.prepare(`UPDATE agents SET last_activity=?, last_activity_at=?, last_seen=? WHERE id=?`).run(activity, now, now, agent_id);
+    // Upsert so an unregistered agent (e.g. after a fresh volume) self-heals instead of
+    // silently no-oping. Name/capabilities are only seeded on insert — a later
+    // register_agent with the real name wins and is never clobbered here.
+    this.db
+      .prepare(
+        `INSERT INTO agents (id, name, capabilities, last_seen, last_activity, last_activity_at)
+         VALUES (@id, @id, '[]', @now, @activity, @now)
+         ON CONFLICT(id) DO UPDATE SET
+           last_activity=excluded.last_activity,
+           last_activity_at=excluded.last_activity_at,
+           last_seen=excluded.last_seen`
+      )
+      .run({ id: agent_id, now, activity });
     const content = JSON.stringify({ activity, detail: detail ?? null });
     const info = this.db
       .prepare(
@@ -271,6 +286,26 @@ class Bus {
     args.push(limit);
     const feed = this.db.prepare(sql).all(...args).map(toMessage).reverse();
     return { feed, agents: this.listAgents() };
+  }
+
+  // One round-trip for hooks: upsert presence (+ optional status publish) AND pick up
+  // unread messages. Strictly non-blocking — never long-polls. Status rows are filtered
+  // defensively even though drain shouldn't surface them (#activity isn't a membership).
+  sync({ agent_id, activity, detail, peek = false, dm_only = false, limit = 50, include_activity = false }) {
+    if (activity) {
+      this.setStatus({ agent_id, activity, detail });
+    } else {
+      this.db
+        .prepare(
+          `INSERT INTO agents (id, name, capabilities, last_seen) VALUES (@id, @id, '[]', @now)
+           ON CONFLICT(id) DO UPDATE SET last_seen=excluded.last_seen`
+        )
+        .run({ id: agent_id, now: this.now() });
+    }
+    const messages = this.drain(agent_id, { limit, peek, dm_only }).filter((m) => m.type !== "status");
+    const out = { ok: true, messages, cursor: messages.length ? messages[messages.length - 1].id : null };
+    if (include_activity) Object.assign(out, this.getActivity({ limit: 20 }));
+    return out;
   }
 
   // ---- push/wake ----

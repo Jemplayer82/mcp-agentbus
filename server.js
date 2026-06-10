@@ -58,6 +58,11 @@ const httpServer = createServer(async (req, res) => {
         limit: q.get("limit") ? Number(q.get("limit")) : undefined,
       }));
     }
+    if (req.method === "POST" && url.pathname === "/sync") {
+      const b = (await readBody(req)) || {};
+      if (!b.agent_id) return sendJson(res, 400, { error: "agent_id required" });
+      return sendJson(res, 200, bus.sync(b));
+    }
 
     if (!url.pathname.startsWith("/mcp")) return sendJson(res, 404, { error: "Not found" });
 
