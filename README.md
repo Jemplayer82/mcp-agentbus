@@ -1,54 +1,209 @@
-# MCP-Switchboard
+# mcp-store
 
-A real-time inter-agent switchboard, delivered as one centralized streamable-HTTP MCP server. Any MCP-capable agent (Claude Code, an Ollama-backed Hermes daemon, anything you drop in later) connects with one HTTP URL + bearer token and can message, coordinate, and stay ambiently aware of the others.
+> **A self-hosted app store for [Model Context Protocol](https://modelcontextprotocol.io) servers.**
+> Browse a curated catalog, fill in your secrets, click Deploy — no YAML required.
 
-One container holds all state — a module-level singleton (`bus.js`) backed by SQLite for durability and an in-process `EventEmitter` for sub-second long-poll delivery. No broker.
+![FastAPI](https://img.shields.io/badge/FastAPI-Python_3.12-009688?style=flat-square&logo=fastapi)
+![Docker](https://img.shields.io/badge/Deploy-Docker_%2F_Portainer-2496ED?style=flat-square&logo=docker)
+![Catalog](https://img.shields.io/badge/Catalog-21%2B_servers-00d4aa?style=flat-square)
+![Transport](https://img.shields.io/badge/Transport-streamableHttp-6e40c9?style=flat-square)
+
+---
+
+## What is it
+
+MCP Store is a lightweight web app that turns deploying MCP servers into a point-and-click operation. Instead of hand-editing `docker-compose.yml` files, you open a browser, pick the servers you need from the catalog, paste your API keys, and click **Deploy**.
+
+The orchestrator generates a compose stack and pushes it to Docker directly or through Portainer — secrets never touch a config file.
+
+<img width="800" height="300" alt="architecture" src="https://github.com/user-attachments/assets/4cde5ad8-782d-4fda-8248-ceb11c86373a" />
+
+---
 
 ## How it works
 
-- **Transport:** stateless per-request `StreamableHTTPServerTransport`; every request's tools close over the one shared `bus` singleton.
-- **Real-time:** `wait_for_message` long-polls (holds the HTTP response up to 25s, returns the instant a message arrives). Loop it for live receipt.
-- **Durable:** messages + per-agent read cursors live in SQLite (`/data/switchboard.db`), so they survive restarts and drain exactly once.
-- **Waking idle agents:** MCP can't push into a non-running LLM. Daemons either hold a long-poll loop or register a `wake_url` the bus POSTs on delivery. Interactive Claude Code can't be webhook-woken — it sends live and responds via a scheduled/cron routine or a live loop.
-- **Awareness:** agents `set_status` to self-report activity; `get_activity` returns the cross-agent feed + a presence/status snapshot. Wire Claude Code hooks to auto-publish and auto-digest (see `hooks/`).
-- **Inbound delivery to Claude Code:** the hooks are also the inbound channel. `POST /sync` (REST) publishes status AND drains the inbox in one round trip; the PostToolUse hook injects arriving messages mid-turn, the Stop hook blocks the turn once (loop-guarded via `stop_hook_active`) so Claude replies to pending DMs before going idle, and the digest hook surfaces anything left unread at the next prompt. Senders of `type:'instruction'` should treat no-`result`-reply as a retry signal (rows stay in SQLite, recoverable via `get_messages since_id`). Kill switches in `~/.switchboard/config.json`: `"inbound": {"deliver": true, "block_on_stop": true}`.
+### 1 — Catalog loads from YAML
 
-## Tools
+`catalog/catalog.yaml` defines every available server — its name, category, Docker image or npx package, required env keys, and docs link. `catalog.py` parses it into Pydantic models at startup. No database needed.
 
-| Tool | Purpose |
+### 2 — UI renders the catalog & checks installed state
+
+The SPA calls `/api/catalog` then `/api/installed`, which introspects the live Portainer/Docker stack to show which servers are already running. Cards render with category tags, secret input fields, and docs links.
+
+### 3 — You check boxes, fill secrets, click Deploy
+
+Selected server IDs plus env values are POSTed to `/api/deploy`. Secrets travel only from browser → `localhost:8090` → Docker/Portainer. They are never written to disk unless you explicitly opt in.
+
+### 4 — composegen.py builds the stack
+
+Each entry is resolved to a service definition:
+
+| Entry type | How it runs |
 |---|---|
-| `register_agent` | Register/refresh (idempotent); optional `wake_url` for daemons |
-| `list_agents` | Agents + online presence + current activity |
-| `create_channel` / `list_channels` / `join_channel` | Channels |
-| `send_message` | Direct (`to`) or channel (`channel_id`); `type`/`thread_id`/`reply_to` |
-| `wait_for_message` | Long-poll receive (real-time) |
-| `get_messages` | Non-blocking history/drain (`peek`, `since_id`) |
-| `ack` | Advance read cursor (peek-then-act flows) |
-| `heartbeat` | Refresh presence |
-| `set_status` / `get_activity` | Awareness layer |
+| `supergateway-npx` | Wraps any `npx` package behind [supergateway](https://github.com/supercorp-ai/supergateway) on the streamableHttp transport |
+| `image` | Pulls a prebuilt `ghcr.io` image directly |
+| `build` | Clones a GitHub repo and builds the image on your Docker host |
 
-## Client wiring
+Ports, volumes, and `shm_size` are applied per spec. An nginx proxy can optionally front all services on the same network.
 
-**Claude Code** — `~/.claude.json` `mcpServers`:
-```json
-"switchboard": {
-  "type": "http",
-  "url": "http://192.168.7.50:3108/mcp",
-  "headers": { "Authorization": "Bearer <SWITCHBOARD_MCP_TOKEN>" }
-}
-```
+### 5 — Deploy adapter pushes the stack
 
-**Hermes (or any HTTP-MCP daemon)** — same URL + bearer in its MCP config. For async receipt, hold a `wait_for_message` loop or register a `wake_url`.
+**Docker socket:** the compose dict is applied via the Docker SDK directly on the host.
 
-## Deploy
+**Portainer adapter:** the YAML is posted to Portainer's REST API, creating or merging into a named stack on the target endpoint. Merge mode does a read-modify-write so existing services aren't pruned.
 
-Prebuilt image `ghcr.io/jemplayer82/mcp-switchboard:latest` (built by `.github/workflows/build-push.yml`). Deploy as a standalone Portainer stack (port 3108→3107, named volume), set `SWITCHBOARD_MCP_TOKEN`, and deploy via Portainer REST. Health: `curl -sf http://192.168.7.50:3108/healthz`.
+### 6 — Build-from-source (optional)
 
-## Test
+Paste any public GitHub URL under *Add Custom Server → GitHub URL*. The preview endpoint auto-detects a `Dockerfile` vs `package.json` and recommends the right deploy type. Click Deploy — the orchestrator clones and builds on your Docker host. Edge targets push the resulting image to a registry first.
+
+---
+
+## Catalog
+
+21+ curated servers across 13 categories, defined in `catalog/catalog.yaml`. Each entry ships with env-key scaffolding — you fill in values, never the catalog.
+
+| Category | Servers |
+|---|---|
+| `memory` | Memory (knowledge graph) |
+| `reasoning` | Sequential Thinking |
+| `ai` | Ollama · EverArt |
+| `dev` | GitHub · GitLab · Sentry |
+| `search` | SearXNG · Brave Search · Fetch |
+| `storage` | Filesystem · Google Drive |
+| `database` | PostgreSQL |
+| `communication` | Slack |
+| `productivity` | Linear · Notion · GSD Cloud Gateway |
+| `browser` | GSD Browser · Puppeteer |
+| `infrastructure` | Portainer MCP |
+| `finance` | Schwab Trading |
+| `home-automation` | Home Assistant |
+
+---
+
+## Install
+
+### Option A — Docker Socket
+
+Deploys MCP servers directly to this machine. Simplest setup, no extra tools needed.
 
 ```bash
-node test/smoke.mjs    # self-contained: boots the server, runs a full round-trip, asserts
-# or against the live server:
-SWITCHBOARD_MCP_TOKEN=... node test/receiver.js   # in one terminal
-SWITCHBOARD_MCP_TOKEN=... node test/sender.js receiver "hello"   # in another
+docker run -d \
+  --name mcp-store \
+  -p 8090:8000 \
+  -v mcp-store-data:/data \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  ghcr.io/jemplayer82/mcp-orchestrator:latest
 ```
+
+Open **http://localhost:8090** and deploy your first servers.
+
+### Option B — Portainer API
+
+Deploys to a remote host through Portainer's REST API. Your token stays server-side.
+
+```bash
+docker run -d \
+  --name mcp-store \
+  -p 8090:8000 \
+  -v mcp-store-data:/data \
+  ghcr.io/jemplayer82/mcp-orchestrator:latest
+```
+
+Open **http://localhost:8090** → *Deploy Target → Portainer API* → enter your URL, API token, and Endpoint ID → *Save Config*.
+
+### docker-compose (recommended)
+
+```bash
+curl -O https://raw.githubusercontent.com/Jemplayer82/mcp-store/main/docker-compose.yml
+docker compose up -d
+```
+
+<details>
+<summary>docker-compose.yml</summary>
+
+```yaml
+version: "3.9"
+
+services:
+  mcp-store:
+    image: ghcr.io/jemplayer82/mcp-orchestrator:latest
+    container_name: mcp-store
+    restart: unless-stopped
+    ports:
+      - "8090:8000"
+    volumes:
+      - orchestrator_data:/data
+      # Uncomment for Docker socket mode:
+      # - /var/run/docker.sock:/var/run/docker.sock
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  orchestrator_data:
+```
+
+</details>
+
+---
+
+## Custom servers
+
+### Any npx package
+
+Open *Add Custom Server → npx Package* and enter a package name or `github:owner/repo` spec. Works with anything that runs via `npx -y <package>`.
+
+### Build from a GitHub URL
+
+Paste any public GitHub repo URL under *Add Custom Server → GitHub URL*. The preview endpoint detects a `Dockerfile` or `package.json` and recommends the right deploy type automatically.
+
+> ⚠️ Building from a GitHub URL runs that code on your Docker host. Only use sources you trust. A `_trust_confirmed=yes` env flag is required as an explicit acknowledgement.
+
+### Save to My Catalog
+
+Custom servers can be saved to your local catalog so they persist across sessions and appear in the main grid alongside official servers.
+
+---
+
+## Security
+
+- **No secrets in the repo.** The catalog stores only env key names and labels — never values.
+- **Portainer token stays server-side.** The SPA calls only `localhost:8090/api/*` — your token is never sent to the browser or logged.
+- **Transient by default.** Secrets entered at deploy time are used once and discarded unless you explicitly opt in to persistence.
+- **Docker socket warning.** Mounting `/var/run/docker.sock` gives the container host-level access. Use Portainer mode for a lower-privilege setup on remote hosts.
+- **Build trust gate.** Deploying a `build`-type server requires `_trust_confirmed=yes` as a speed-bump against accidentally running untrusted code.
+
+---
+
+## Development
+
+```bash
+git clone https://github.com/Jemplayer82/mcp-store
+cd mcp-store
+pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8090
+```
+
+Hot-reload with Docker:
+
+```bash
+docker compose -f docker-compose.dev.yml up
+```
+
+Run tests:
+
+```bash
+pytest tests/
+```
+
+### Adding a server to the catalog
+
+Fork the repo, add an entry to `catalog/catalog.yaml`, open a PR. See [catalog/README.md](catalog/README.md) for the full schema and rules. Official entries must be type `supergateway-npx` or `image` — never `build`.
+
+---
+
+MIT License
+
+<img width="800" height="300" alt="architecture" src="https://github.com/user-attachments/assets/4cde5ad8-782d-4fda-8248-ceb11c86373a" />
