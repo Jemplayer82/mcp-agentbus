@@ -1,3 +1,18 @@
+---
+gsd_state_version: 1.0
+milestone: v1.1
+milestone_name: Supergateway Fronting + Playwright Scraper
+status: planning
+last_updated: "2026-06-12T02:49:12.065Z"
+last_activity: 2026-06-12
+progress:
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
+---
+
 # Project State
 
 ## Project Reference
@@ -9,13 +24,13 @@ See: .planning/PROJECT.md (updated 2026-06-09)
 
 ## Current Position
 
-Phases 1-4: BUILT, DEPLOYED, VERIFIED. Phase 5: VERIFY-01 done; VERIFY-02 pending Hermes.
-Status: Live at http://192.168.7.50:3108/mcp (Portainer stack "agentbus" id 63, endpoint 3, host 3108→container 3107)
-Last activity: 2026-06-09 — bus deployed + verified live (214ms round-trip); Claude Code wired (.claude.json) + awareness hooks installed
-
-Progress: [█████████░] ~90% (only the Claude↔Hermes live leg remains, gated on the OpenClaw boundary)
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-06-12 — Milestone v1.1 started
 
 ### Built & verified
+
 - Phase 1-2 (Bus Core + Presence/Wake/Awareness): server.js/bus.js/tools.js/schema.sql — 12 MCP tools + REST /status,/activity. Smoke test green (<1s delivery, drain, no-redelivery, channels, instruction→result, presence, activity).
 - Phase 3 (Ship): ghcr.io/jemplayer82/mcp-agentbus:latest via CI; deployed as STANDALONE Portainer stack (deviation from "merge into mcp-shared" — chosen for zero blast radius on the 9-service production stack; reversible). Live /healthz ok, durability proven across container recreate.
 - Phase 4 (Wire + hooks): Claude Code .claude.json entry added (backup at C:/tmp/claude.json.backup-*); awareness hooks merged into ~/.claude/settings.json (backup at C:/tmp/claude-settings.backup-*); ~/.agentbus/config.json written. Hooks tested live. **Takes effect on next Claude Code restart.**
@@ -25,6 +40,7 @@ Progress: [█████████░] ~90% (only the Claude↔Hermes live l
 ## Performance Metrics
 
 **Velocity:**
+
 - Total plans completed: 0
 - Average duration: — min
 - Total execution time: 0.0 hours
@@ -36,6 +52,7 @@ Progress: [█████████░] ~90% (only the Claude↔Hermes live l
 | - | - | - | - |
 
 **Recent Trend:**
+
 - Last 5 plans: —
 - Trend: —
 
